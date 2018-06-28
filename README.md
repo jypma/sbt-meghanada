@@ -1,7 +1,7 @@
 # sbt-meghanada
 
 This is an SBT plugin that generates configuration files for
-[meghanada])(http://www.skybert.net/emacs/java-programming-in-emacs-with-meghanada-mode/). This allows emacs
+[meghanada](http://www.skybert.net/emacs/java-programming-in-emacs-with-meghanada-mode/). This allows emacs
 users to use `meghanada-mode` to navigate Java code that comes from an SBT project.
 
 Meghanada itself only supports Maven or Grails natively, but will use a `.meghanada.conf` configuration file
