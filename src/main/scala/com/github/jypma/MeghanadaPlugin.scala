@@ -38,20 +38,79 @@ object MeghanadaPlugin extends AutoPlugin {
       std.TaskExtra.joinTasks(tasks).join.map(_.toMap)
     }
   }
+
+  override def trigger = allRequirements
   
   object autoImport {
-    val meghanada = taskKey[Unit]("Generate meghanada configuration")
+    val meghanada = taskKey[Unit]("Generate meghanada configuration for all projects")
+    val meghanadaConfig = taskKey[Unit]("Generate meghanada configuration for a project")
   }
 
   import autoImport._
   
   def quotedArray(s: Seq[String]): String = s.map(f => "\"" + f + "\"").mkString(",\n")
 
-  // FIXME this should go into buildSettings instead, and then iterate over all projects.
-  // That way, we don't need .enablePlugins(MeghanadaPlugin) on each project.
-  override lazy val projectSettings = Seq(
+  def generate(proj: ProjectRef)(implicit bs: BuildStructure, s: State): Unit = {
+    val out = new PrintWriter(new FileWriter(s"${baseDirectory.gimme(proj)}${File.separator}.meghanada.conf"))
+      out.println("""
+java_home = "/usr/lib/jvm/default"
+
+java-version = "1.8"
+
+compile-source = "1.8"
+
+compile-target = "1.8"""")
+
+    val jars = (dependencyClasspath in Compile).run(proj)
+      .filter(_.data.getPath.endsWith(".jar")) // Throw out project dependencies
+      .map(_.data.getAbsolutePath)
+    out.println(s"dependencies = [${quotedArray(jars)}]")
+
+    val depSrcs: Seq[File] = thisProject.gimme(proj).dependencies.map(_.project).flatMap(p =>
+      (sourceDirectories in Compile).gimme(p))
+
+    val srcs =
+      (sourceDirectories in Compile).gimme(proj).map(_.getAbsolutePath) ++ depSrcs.map(_.getAbsolutePath)
+    out.println(s"sources = [${quotedArray(srcs)}]")
+
+    val testJars = (dependencyClasspath in Test).run(proj)
+      .filter(_.data.getPath.endsWith(".jar")) // Throw out project dependencies
+      .map(_.data.getAbsolutePath)
+    out.println(s"test-dependencies = [${quotedArray(testJars)}]")
+
+    val testSrcs =
+      (sourceDirectories in Test).gimme(proj).map(_.getAbsolutePath) ++ depSrcs.map(_.getAbsolutePath)
+    out.println(s"test-sources = [${quotedArray(testSrcs)}]")
+
+    out.println(s"""
+resources = ["src/main/resources"]
+
+output = "target/scala-2.12/classes"
+
+test-resources = ["src/test/resources"]
+
+test-output = "target/scala-2.12/test-classes"
+""")
+    out.close()
+  }
+
+  override lazy val globalSettings = Seq(
+    // TODO consider for removal, since aggregating on meghanadaConfig just works.
     meghanada := {
-      
+      val extracted = Project.extract(state.value)
+      implicit val st = state.value
+      implicit val bs = extracted.structure
+      val projs = Project.structure(state.value).allProjectRefs
+
+      projs.foreach {  proj =>
+        generate(proj)
+      }
+    }
+  )
+
+  override lazy val projectSettings = Seq(
+    meghanadaConfig := {
+
       val out = new PrintWriter(new FileWriter(s"${baseDirectory.value}${File.separator}.meghanada.conf"))
       val extracted = Project.extract(state.value)
       implicit val st = state.value
@@ -69,7 +128,7 @@ compile-target = "1.8"""")
         .filter(_.data.getPath.endsWith(".jar")) // Throw out project dependencies
         .map(_.data.getAbsolutePath)
       out.println(s"dependencies = [${quotedArray(jars)}]")
-        
+
       val depSrcs: Seq[File] = thisProject.value.dependencies.map(_.project).flatMap(p => (sourceDirectories in Compile).gimme(p))
       val srcs = 
         (sourceDirectories in Compile).value.map(_.getAbsolutePath) ++ 
